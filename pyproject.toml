@@ -1,0 +1,25 @@
+[project]
+name = "video-edit"
+version = "0.1.0"
+description = "Brand-driven video editing skill for Claude Code: brand docs + raw footage in, edited video with motion graphics out"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "numpy",
+    "pillow",
+    "fonttools",   # font names, WOFF/WOFF2, static instances for libass
+    "brotli",      # WOFF2 decompression
+    "pypdfium2",   # brand PDFs: text, embedded images, page and logo renders
+    "resvg-py",    # SVG logos → PNG
+]
+
+[tool.uv]
+package = false
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = []

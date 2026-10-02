@@ -1,0 +1,40 @@
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Node / HyperFrames (installed on demand, never vendored)
+node_modules/
+package-lock.json
+.npm/
+
+# Session artifacts if someone runs the skill inside its own folder
+# (outputs belong in <project>/edit/ — this is a safety net)
+edit/
+*.mp4
+*.mov
+*.webm
+*.wav
+*.opus
