@@ -131,5 +131,47 @@ class FilterQuoteTests(unittest.TestCase):
         self.assertEqual(q, "'/Users/x/Application Support/a\\:b.ass'")
 
 
+class RichCaptionTests(unittest.TestCase):
+    """reveal / active_pop / emphasis / soft_shadow (opt-in viral styles)."""
+
+    def chunk(self):
+        return [[w("we've", 0.0, 0.3), w("got", 0.3, 0.5), w("$15", 0.5, 0.9)]]
+
+    def test_reveal_hides_later_words_and_pops_active(self):
+        style = captions.resolve_style({"reveal": True, "active_pop": 12})
+        ev = captions.build_events(self.chunk(), style)
+        self.assertEqual(len(ev), 3)
+        first = ev[0][2]
+        self.assertIn("\\alpha&HFF&", first)                  # later words hidden (space kept)
+        self.assertIn("\\fscx112\\fscy112\\t(0,110", first)  # active word pops back to 100
+
+    def test_emphasis_dict_and_time_windows(self):
+        style = captions.resolve_style({"emphasis": {"$15": "#4CC9F0"}})
+        last = captions.build_events(self.chunk(), style)[-1][2]
+        self.assertIn(captions.ass_inline_color("#4CC9F0"), last)
+        self.assertIn("\\fscx112", last)
+        windowed = captions.resolve_style({"emphasis": [{"word": "$15", "color": "#FF6B6B", "start": 10}]})
+        self.assertIsNone(captions.emphasis_color("$15", 0.5, windowed))
+        self.assertEqual(captions.emphasis_color("$15.", 12.0, windowed), "#FF6B6B")
+
+    def test_soft_shadow_writes_blurred_layer_under_text(self):
+        style = captions.resolve_style({"soft_shadow": True, "font": "Inter ExtraBold"})
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "c.ass"
+            captions.write_ass(self.chunk(), style, 1080, 1920, out)
+            txt = out.read_text()
+        self.assertIn("Style: Shadow,Inter ExtraBold", txt)
+        dl = [l for l in txt.splitlines() if l.startswith("Dialogue:")]
+        self.assertTrue(any(",Shadow," in l and "\\blur12" in l for l in dl))
+        self.assertTrue(any(l.startswith("Dialogue: 1,") and ",Cap," in l for l in dl))
+        cap_style = next(l for l in txt.splitlines() if l.startswith("Style: Cap,"))
+        self.assertIn(",1,0,0,5,", cap_style)  # BorderStyle 1, outline 0, shadow 0
+
+    def test_plain_highlight_unchanged(self):
+        style = captions.resolve_style({})
+        ev = captions.build_events(self.chunk(), style)
+        self.assertNotIn("alpha", ev[0][2])
+
+
 if __name__ == "__main__":
     unittest.main()

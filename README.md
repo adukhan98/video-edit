@@ -14,12 +14,16 @@ Talking heads, reels/shorts, ads, launches, tutorials, interviews, podcasts.
   renders. Missing fonts come from Google Fonts when they exist; commercial fonts it asks you for.
 - **Cuts like an editor.** Word-level transcripts (ElevenLabs Scribe, or free local whisper.cpp), filler
   and false-start removal, best-take selection, 30 ms fades at every cut, HDR tone-mapping, reframing
-  landscape footage for vertical.
+  landscape footage for vertical. Tight short-form jump cuts measured on the audio envelope (not on
+  whisper's loose timestamps), every filler cut re-transcribed to prove no word was clipped, and head-pose
+  checks (macOS Vision) so cuts never land while the speaker is looking down at notes.
 - **Builds motion graphics in parallel.** Each graphic is its own [HyperFrames](https://github.com/heygen-com/hyperframes)
   project, built by its own sub-agent from the brand kit, rendered transparent (ProRes 4444), and
   QA'd over the real footage against the platform's safe zone.
 - **Branded captions.** Your font, your colours, active-word highlight, safe-zone placement, moved to
-  the seam during split-screens — rendered so brand hex values stay exact.
+  the seam during split-screens — rendered so brand hex values stay exact. Short-form options: words
+  revealed as spoken, active-word pop, colour-coded emphasis words, clean soft-shadow style — and it
+  shows you a grid of caption styles to pick from instead of guessing.
 - **Downloads with yt-dlp.** Links you give it, plus Creative Commons b-roll and music it finds itself —
   licence-verified, cached and credited.
 - **Mixes and masters.** Music ducked under speech, sound effects on the frame, −14 LUFS with true peak

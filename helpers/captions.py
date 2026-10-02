@@ -192,6 +192,11 @@ DEFAULT_STYLE: dict = {
     "max_cue_s": 2.6,
     "hold_s": 0.12,             # linger after the last word of a cue
     "pop": True,                # small scale pop when a cue appears
+    "reveal": False,            # highlight mode: words appear as they are spoken (later words hidden, space reserved)
+    "active_pop": 0,            # highlight mode: % the active word pops above its size, easing back in 110 ms (e.g. 12)
+    "emphasis": {},             # {"$50": "#00D26A"} or [{"word": "$15", "color": "#4CC9F0", "start": 0, "end": 30}]
+    "emphasis_scale": 112,      # % size of emphasis words (always coloured, not only while active)
+    "soft_shadow": False,       # no hard stroke: a blurred dark shadow layer under the text (clean / minimal look)
     "letter_spacing": 0,
     "fixes": {},                # {"Mehta": "Meta"} exact-word corrections (brand names!)
     "censor": [],               # words shown as s**t
@@ -285,11 +290,64 @@ def _px(value: float, extent: int) -> int:
 POP_TAG = r"{\fscx108\fscy108\t(0,90,\fscx100\fscy100)}"
 
 
+def emphasis_color(word: str, t: float, style: dict) -> str | None:
+    """Colour of an emphasis word at output time t, or None.
+
+    `emphasis` is {word: hex} or a list of {"word", "color", "start"?, "end"?} so the same
+    word can change colour over the video (e.g. "$15" blue in one section, coral later).
+    Matching ignores case and trailing punctuation.
+    """
+    emph = style.get("emphasis") or {}
+    key = re.sub(r"[.,!?;:]+$", "", word).lower()
+    if isinstance(emph, dict):
+        for k, v in emph.items():
+            if k.lower() == key:
+                return v
+        return None
+    for e in emph:
+        if str(e.get("word", "")).lower() == key and float(e.get("start", 0)) <= t < float(e.get("end", 1e9)):
+            return e.get("color")
+    return None
+
+
+def _rich_parts(ch: list[dict], texts: list[str], wi: int, style: dict, shadow: bool = False) -> str:
+    """Highlight-mode text for word `wi` active, with reveal / active pop / emphasis."""
+    hl, base = style["highlight"], style["color"]
+    parts = []
+    for j, (w, t) in enumerate(zip(ch, texts)):
+        col = emphasis_color(w["text"], w["start"], style)
+        sc = int(style.get("emphasis_scale", 112)) if col else 100
+        hidden = style.get("reveal") and j > wi
+        if shadow:
+            alpha = "FF" if hidden else "30"
+            parts.append(f"{{\\alpha&H{alpha}&\\fscx{sc}\\fscy{sc}}}{t}")
+            continue
+        if hidden:
+            parts.append(f"{{\\alpha&HFF&\\fscx{sc}\\fscy{sc}}}{t}")
+        elif j == wi:
+            pop = int(style.get("active_pop") or 0)
+            anim = (f"\\fscx{sc + pop}\\fscy{sc + pop}\\t(0,110,\\fscx{sc}\\fscy{sc})" if pop
+                    else f"\\fscx{sc}\\fscy{sc}")
+            parts.append(f"{{\\alpha&H00&\\c{ass_inline_color(col or hl)}{anim}}}{t}")
+        else:
+            parts.append(f"{{\\alpha&H00&\\c{ass_inline_color(col or base)}\\fscx{sc}\\fscy{sc}}}{t}")
+    return " ".join(parts)
+
+
+def _rich(style: dict) -> bool:
+    return bool(style.get("reveal") or style.get("active_pop") or style.get("emphasis") or style.get("soft_shadow"))
+
+
 def build_events(chunks: list[list[dict]], style: dict) -> list[tuple[float, float, str, bool]]:
-    """(start, end, text, is_cue_start) per event. Highlight mode emits one event per word."""
+    """(start, end, text, is_cue_start) per event. Highlight mode emits one event per word.
+
+    With reveal / active_pop / emphasis / soft_shadow, the text carries per-word override
+    tags; soft_shadow events come in pairs, the shadow copy's text prefixed with "\\0".
+    """
     events: list[tuple[float, float, str, bool]] = []
     hl = ass_inline_color(style["highlight"])
     base = ass_inline_color(style["color"])
+    rich = _rich(style)
     for ci, ch in enumerate(chunks):
         c0 = ch[0]["start"]
         nxt0 = chunks[ci + 1][0]["start"] if ci + 1 < len(chunks) else None
@@ -307,6 +365,11 @@ def build_events(chunks: list[list[dict]], style: dict) -> list[tuple[float, flo
                 s = c0 if wi == 0 else w["start"]
                 e = ch[wi + 1]["start"] if wi + 1 < len(ch) else c1
                 if e - s < 0.02:
+                    continue
+                if rich:
+                    if style.get("soft_shadow"):
+                        events.append((s, e, "\0" + _rich_parts(ch, texts, wi, style, shadow=True), wi == 0))
+                    events.append((s, e, _rich_parts(ch, texts, wi, style), wi == 0))
                     continue
                 parts = [
                     f"{{\\c{hl}}}{t}{{\\c{base}}}" if j == wi else t
@@ -332,6 +395,8 @@ def write_ass(chunks: list[list[dict]], style: dict, width: int, height: int, ou
     x = _px(style["x"], width)
     y_default = _px(style["y"], height) if style["y"] is not None else plat["caption_y"]
 
+    if style.get("soft_shadow"):
+        outline, shadow = 0, 0
     if style["mode"] == "box":
         border_style, outline_c, back_c = 3, ass_color(style["box_color"], style["box_alpha"]), "&HFF000000"
         outline = max(outline, round(size * 0.22))
@@ -357,6 +422,8 @@ def write_ass(chunks: list[list[dict]], style: dict, width: int, height: int, ou
         "Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: Cap,{style['font']},{size},{primary},{primary},{outline_c},{back_c},"
         f"0,0,0,0,100,100,{style['letter_spacing']},0,{border_style},{outline},{shadow},5,0,0,0,1",
+        f"Style: Shadow,{style['font']},{size},&H00000000,&H00000000,&H00000000,&H00000000,"
+        f"0,0,0,0,100,100,{style['letter_spacing']},0,1,{max(2, round(size * 0.045))},0,5,0,0,0,1",
         "",
         "[Events]",
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
@@ -366,15 +433,21 @@ def write_ass(chunks: list[list[dict]], style: dict, width: int, height: int, ou
         (float(w["start"]), float(w["end"]), _px(float(w["y"]), height))
         for w in style.get("windows") or []
     )
+    rich = _rich(style)
     lines: list[str] = []
     for s, e, text, cue_start in build_events(chunks, style):
+        is_shadow = text.startswith("\0")
+        text = text.lstrip("\0")
         cuts = sorted({s, e, *[t for a, b, _ in windows for t in (a, b) if s < t < e]})
         for s2, e2 in zip(cuts, cuts[1:]):
             y = next((wy for a, b, wy in windows if a <= s2 + 0.005 < b), y_default)
-            pop = POP_TAG if (style.get("pop") and cue_start and s2 == s) else ""
+            first = style.get("pop") and cue_start and s2 == s
+            # rich text sets per-word scale, which would cancel a whole-line pop: fade the cue in instead
+            pop = ("{\\fad(50,0)}" if rich else POP_TAG) if first else ""
+            layer, name, extra = (0, "Shadow", "\\blur12") if is_shadow else (1 if rich else 0, "Cap", "")
             lines.append(
-                f"Dialogue: 0,{ass_time(s2)},{ass_time(e2)},Cap,,0,0,0,,"
-                f"{{\\an5\\pos({x},{y})}}{pop}{text}"
+                f"Dialogue: {layer},{ass_time(s2)},{ass_time(e2)},{name},,0,0,0,,"
+                f"{{\\an5\\pos({x},{y}){extra}}}{pop}{text}"
             )
     out_path.write_text(header + "\n" + "\n".join(lines) + "\n", encoding="utf-8")
     return len(lines)

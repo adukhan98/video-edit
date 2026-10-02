@@ -26,10 +26,35 @@ over the real footage before it goes in. Slots are independent, so build them al
    `words.txt` (words in slot seconds), `refs/` (frames underneath), and `hf/` — a HyperFrames project
    already set to the canvas, the slot duration and a transparent background, with the brand kit
    installed. It also writes `animations/SLOT_BRIEF.md` (shared rules) and prints one prompt per slot.
-4. **Spawn one sub-agent per slot in a single message** with the printed prompt. Each authors
-   `hf/index.html`, renders `render.mov`, runs `slots.py check`, fixes, and reports.
+   `words.txt` comes from the source transcript mapped through the EDL. With local whisper, check it
+   against verified per-segment times and overwrite it: agents trust these numbers.
+   **Shared art direction.** When several slots must read as one system (a series of split panels, a
+   recurring widget), write `animations/SHARED.md` before spawning, and start every brief with
+   "FIRST read SHARED.md". It holds the exact layout grid, background treatment, enter/exit motion,
+   continuity state per slot (e.g. what the wallet holds at the start and end of each panel), and
+   the paths of shared assets such as photos or scans. Without it, the panels drift apart in size,
+   position and motion.
+4. **Spawn one sub-agent per slot in a single message**, appending to the printed prompt "read
+   SHARED.md" and any asset paths. Each authors `hf/index.html`, renders `render.mov`, runs
+   `slots.py check`, fixes, and reports. If an agent dies mid-task (rate limit), resume it with
+   SendMessage ("continue from where you left off"). It keeps its context.
 5. **Review** every `check_sheet.jpg` yourself, then add the slots to the EDL `overlays` (with
-   `"layout": "split"` and `crop_y` for split slots) and render a preview.
+   `"layout": "split"` and `crop_y` for split slots). Set each overlay's `duration` to the
+   `ffprobe` duration of its `render.mov`, because renders round to whole frames (4.65 s → 4.667 s).
+   Then render a preview.
+
+### Real-object graphics (photos, scans, product shots)
+Abstract "number + icon" panels read as templates. When the topic has a physical object, put the
+real thing on screen. One shipped reel used public-domain US banknote scans that were broken into
+change, zapped into a plug, wired to a switch and shredded by a fan. Brief agents on:
+- **Treatment:** small radius, contact shadow, a sheen sweep on landing, perspective 1200–1400 px
+  with ≤ 25° tilts, blur only while moving fast, a deterministic flutter.
+- **Integrity:** never recolour or crop away identifying detail (a banknote's denomination, a
+  product's logo). Flip only edge-on, so mirrored text never shows.
+- **Story verbs:** the object breaks, flies, slots into, gets zapped or shredded. That gives each
+  beat its own action.
+- **A continuity widget:** the same object in a small tray (a wallet, a cart, a battery), so the
+  state carries from panel to panel.
 
 ## Layouts and zones
 

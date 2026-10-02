@@ -127,6 +127,9 @@ All take `--help`. Paths below are relative to `<skill_dir>/helpers/`.
 | `pack_transcripts.py --edit-dir E` | `transcripts/*.json` → `takes_packed.md` (phrases, break on ≥ 0.5 s silence). |
 | `timeline_view.py <video> <start> <end>` | Filmstrip + waveform PNG for a range. A drill-down at decision points, not a scan tool. |
 | `audio_env.py snap <video> <t…>` | Nearest quiet 10 ms to a cut edge (useful with local transcripts). |
+| `audio_env.py islands <video>` / `tighten <video> a-b c-d …` | Where speech really is (whisper hides long pauses inside words); split kept spans at every internal pause ≥ 160 ms → tight jump-cut ranges as JSON. |
+| `verify_cuts.py <edl>` / `--source v --probe a:b,c:d` | Transcribe the audio across every join (or a candidate join) — proves a filler cut didn't clip or leave half a word. |
+| `headpose.py --edl <edl>` / `<video>` | macOS Vision head pitch per frame: flags range edges where the speaker looks down at notes or is still lifting their head. |
 | `render.py <edl> -o out.mp4 [--captions] [--preview/--draft] [--base-only] [--reuse-base]` | Extract → concat → composite (zooms, split layouts, overlays, captions LAST) → loudness. Prints the measured LUFS / true peak. |
 | `captions.py --edl edl.json [--verify-font]` | Build the branded `captions.ass` alone (render.py `--captions` does it for you). |
 | `slots.py prepare --edit-dir E` / `slots.py check <slot_dir>` | Set up graphic slots for parallel sub-agents; QA a slot render over the real cut (safe zone, caption band, alpha, timing). |
@@ -149,21 +152,43 @@ All take `--help`. Paths below are relative to `<skill_dir>/helpers/`.
 4. **Footage.** `ffprobe` every source (orientation, fps, HDR, audio tracks). `transcribe_batch.py`
    (pass `--vocab` with brand/product names) → `pack_transcripts.py`. Look at one or two
    `timeline_view`s — is it a front-camera selfie (text reads backwards → `"mirror": true`)? Where is
-   the face (for crops, split layouts, safe placement)?
-5. **Pre-scan.** One pass over `takes_packed.md` for slips, false starts, repeats, and the lines that
-   carry the message (those become graphic beats).
+   the face (for crops, split layouts, safe placement)? With local whisper, run `audio_env.py islands`
+   too: a single word lasting seconds in the transcript (`models.` 25.9–32.8) is a pause whisper
+   swallowed — the islands are the truth, and the real runtime is usually much shorter than the
+   phrase list suggests. Talking-head sources: `headpose.py <video>` shows where the speaker reads notes.
+5. **Pre-scan.** One pass over `takes_packed.md` for slips, false starts, repeats, the lines that
+   carry the message (those become graphic beats), and **fillers to cut**: throat-clearers ("Great.",
+   "So,", "Basically", "Roughly"), sentence-start "So"s, and trailing clauses that restate the point
+   ("…and make sure that they work"). Propose the cut list at the check-in; for short-form, default
+   to cutting them.
 6. **The check-in** (one message): show `board.png` (attach it, or give its path) and summarize
    how you read the brand; then the plan in plain English — structure and target length, take
    choices, what gets cut, the graphics list (each: when, what, which layout), caption style, b-roll
    needs (user footage first, then CC search), music/SFX, grade, delivery formats. Ask only the
    questions the material and the brand raise. **Wait for OK** (unless autopilot).
+   **Caption style is a taste call — show it, don't describe it:** render 3–4 styles on a real frame
+   (e.g. bold caps with stroke · clean sentence-case with soft shadow · lowercase grotesk · box
+   highlight) into one grid image and let the user pick. Don't default captions to the brand's
+   condensed display face (Anton-type fonts read as cramped at caption size).
 7. **Cut.** Write `edl.json` (format below; for multi-take selection use the editor sub-agent brief).
-   `render.py edl.json -o edit/base.mp4 --base-only` (add `--preview` for speed). Drill into
+   Short-form talking heads: cut **tight** — `audio_env.py tighten` removes every internal pause
+   ≥ 160 ms (jump cuts are the style; alternate punch-in `zooms` across them). Filler cuts: find the
+   word boundary on the envelope (`audio_env.py profile`), then **prove it**: `verify_cuts.py --probe`
+   candidate points until the joined audio transcribes to exactly the words you meant to keep.
+   `render.py edl.json -o edit/base.mp4 --base-only` (add `--preview` for speed), then
+   `verify_cuts.py edl.json` and `headpose.py --edl edl.json`: trim any flagged head-move edge when
+   no words are lost, otherwise plan a full-screen graphic or b-roll over it. Drill into
    `timeline_view` at ambiguous edges.
 8. **Graphics.** Write `animations/slots.json` against the base's timeline, `slots.py prepare`, then
    spawn **one sub-agent per slot, all in the same message**, each with the one-line prompt prepare
    prints. They build in HyperFrames, render ProRes 4444 with alpha and self-QA with `slots.py check`.
    Look at every `check_sheet.jpg` yourself when they report back. Details: `references/motion-graphics.md`.
+   Before spawning: when the transcript is loose (local whisper), overwrite each slot's `words.txt`
+   with verified times — agents land reveals on those numbers. Several slots that must look like one
+   system get a shared art-direction file (`animations/SHARED.md`) every brief points to. After the
+   renders: set each overlay's EDL `duration` to the render's real length (`ffprobe`) — renders round
+   to whole frames. An agent killed mid-task (rate limit) keeps its context: resume it with
+   SendMessage instead of respawning.
 9. **B-roll, music, SFX.** `fetch.py search` for CC b-roll when the user has none (look at the
    contact sheet, pick, `fetch.py url --section a-b --found-by-search`). Music: the user's tracks
    or links first; CC tracks second. Details: `references/downloads.md`.
@@ -187,6 +212,11 @@ All take `--help`. Paths below are relative to `<skill_dir>/helpers/`.
 - Footage sanity: mirrored front-camera footage flipped; long static stretches (> ~8 s with nothing
   changing) get a punch-in, a graphic or b-roll; the ending isn't the speaker reaching for the
   phone — trim it or `end_hold` a clean frame under the end card.
+- Talking heads: `headpose.py --edl` shows no flagged edge left uncovered (viewers notice a head
+  dropping to notes at a cut long before they notice an audio seam); no pause ≥ 0.2 s left inside a
+  line; `verify_cuts.py` reads as the intended script at every join.
+- Captions: sample a frame just after each split panel enters and exits — a cue that started before
+  the layout change must not sit at the wrong height.
 - Audio, measured: `render.py` prints integrated LUFS and true peak — expect about −14 LUFS and below
   −1 dBTP. Check section levels with `ffmpeg -i out.mp4 -af ebur128=peak=true -f null -`; an end card
   15 dB under the dialogue, or effects louder than speech, is a bug. You can't listen: report numbers.
@@ -204,6 +234,15 @@ All take `--help`. Paths below are relative to `<skill_dir>/helpers/`.
 - **Example padding** (a shipped launch video): 50 ms before the first kept word, 80 ms after the last.
 - **Local transcripts** (whisper) are a little less exact than Scribe: `audio_env.py snap` an edge onto
   the quietest nearby frame when a cut feels tight, and re-check edges in `timeline_view`.
+  whisper.cpp also (a) swallows long pauses into one word, (b) starts words 0.2–0.4 s late after a
+  pause, and (c) can skip tens of seconds of a long continuous file. For caption timing on a finished
+  cut, transcribe **each segment separately** (short clips align well) and fix the text against the
+  known script.
+- **Fillers are cut on the envelope, not the timestamps.** A filler glued to the next word ("So the
+  next", "hardware basically all") has no silence; find the 20 ms dip, try 2–4 candidate points with
+  `verify_cuts.py --probe`, keep the one that transcribes clean. Expect 2–3 rounds.
+- **Head moves are cut edges too.** Speakers who read notes drop their head ~0.2 s after the last word
+  and lift it ~0.5 s before the next line: end tight (≤ 30 ms pad) and start on the word.
 - **Never reason audio and video independently.** Every cut must work on both tracks.
 
 ## The packed transcript
@@ -282,6 +321,23 @@ a time; hold the final state ≥ 1 s; sync-to-narration cards 3–7 s, beat acce
 never linear. A graphic should be driven by the same data as the sound — word times from
 `words.txt`, never eyeballed.
 
+**Show the real thing, not a number in a box.** When the video is about a concrete object — money,
+a product, a chip, a phone — make that object the hero: real photographs or scans (public-domain
+or CC, through `fetch.py`), given physical motion (3D tilt, flutter, contact shadows, motion blur
+while fast). Numbers become labels on it. Feedback from a shipped reel: four identical
+"big number + icon" panels read as a template; real banknotes being broken into change, zapped and
+shredded read as an edit. Other levers that worked:
+- **A continuity object** carried across panels (a wallet draining $100 → $50 → $30 → $15 → $0)
+  turns separate beats into one story.
+- **Vary the layout**: top cards while the speaker is engaging, split panels for explanations,
+  full-screen for big moments, so no two neighbouring beats look the same.
+- **Full-screen graphics double as cover** for unusable footage (a head lifting from notes, a cut
+  that jumps too hard).
+- **A pay-off visual for the scale-up line** ("billions") — zoom out to an endless grid of the
+  thing.
+
+## Captions
+
 ## Captions
 
 `render.py --captions` builds `captions.ass` from the brand kit: brand font (static instance), text and
@@ -290,6 +346,20 @@ band. Tune per project in the EDL `captions` block (brand.json `captions` is the
 `words_per_cue`, `max_words`, `max_chars`, `case`, `y`, `windows` (position overrides), `fixes`
 (`{"Mehta": "Meta"}` — always fix brand names), `censor`. During split layouts captions move to the
 seam automatically. Proofread captions against the audio: whisper sometimes expands contractions.
+
+Short-form styling options (all opt-in, in the EDL `captions` block):
+- `"reveal": true` — words appear as they are spoken (later words hidden, space reserved).
+- `"active_pop": 12` — the spoken word pops 12 % and eases back in 110 ms.
+- `"emphasis": {"$50": "#00D26A"}` — always coloured, scaled by `emphasis_scale` (default 112 %).
+  A list `[{"word": "$15", "color": "#4CC9F0", "start": 0, "end": 30}, …]` lets a word change
+  colour by section, e.g. matching each graphic's category colour.
+- `"soft_shadow": true` — no hard stroke, a blurred shadow layer underneath. This is the clean
+  sentence-case look; pair it with a sturdy sans (Inter / Poppins ExtraBold, `"case": "natural"`).
+
+A reel's caption that worked after feedback: Inter ExtraBold 92 px (1080×1920), natural case,
+`reveal` + `active_pop` + `emphasis` + `soft_shadow`, 1–3 words per cue, ≤ 16 characters. Font
+files: `brand_kit.py fonts "Inter" --weights 800 -o edit/capfonts`, then point `fonts_dir` at that
+folder.
 
 ## Color grade
 
@@ -377,6 +447,13 @@ Append one section per session:
 ## Anti-patterns
 
 - **Inventing brand assets.** Redrawn logos, "close enough" colours, a guessed font. Use the kit or ask.
+- **Trusting whisper's pauses.** A transcript phrase list hides seconds of dead air inside single
+  words; the cut looks tight on paper and plays slow. Measure with `audio_env.py islands`/`tighten`.
+- **Unverified filler cuts.** A cut a few hundred ms off leaves "hardware-ba…" or eats "the next".
+  `verify_cuts.py` every join.
+- **Cutting on audio while the head is still moving.** Check `headpose.py --edl`.
+- **Abstract-only graphics for a concrete topic.** Numbers on boxes, when the story is about money
+  (or a product) you could show for real.
 - **Graphics without the brand kit.** Every slot imports `brand.css`; no hard-coded colours or fonts.
 - **Unverified fonts.** Web fonts that fail fall back silently; libass swaps faces silently. Assert / verify.
 - **Variable fonts in libass captions.** Hangs or wrong weights. Static instance only.

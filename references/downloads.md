@@ -73,6 +73,25 @@ uv run --project <skill_dir> <skill_dir>/helpers/fetch.py search "aerial city ni
 lists anything that still needs a rights check. Deliver it with the video (CC BY needs the credit in
 the post description or end card).
 
+## Public-domain images (Wikimedia Commons)
+
+Good for real-object graphics: US government works (currency, NASA imagery), old artworks, CC0
+photos.
+1. Find the file, and read its licence, through the API. Send a descriptive User-Agent:
+   `curl -s -G https://commons.wikimedia.org/w/api.php -A "video-edit/1.0" --data-urlencode
+   action=query --data-urlencode "titles=File:<name>" --data-urlencode prop=imageinfo
+   --data-urlencode "iiprop=url|size|extmetadata" --data-urlencode iiurlwidth=1920
+   --data-urlencode format=json`. `extmetadata.LicenseShortName` must say Public domain, CC0 or CC BY.
+   Use `list=search&srnamespace=6&srsearch=…` to find titles.
+2. Download the `thumburl` (1920 px) or the original `url` with `fetch.py url "<direct file URL>"`.
+   The manifest records direct files as `user-provided`. Add the real licence to `credits.md`
+   yourself.
+3. Commons rate-limits bursts (HTTP 429 after about 4 quick requests). Wait about 60 s, then retry
+   one at a time.
+
+Currency images: US law allows reproductions that are clearly not counterfeit-usable. On-screen
+motion graphics are fine; don't output print-size, both-sides, actual-size stills.
+
 ## Music
 
 The user's tracks first, then the brand's sonic assets, then CC music (`search "… creative commons
